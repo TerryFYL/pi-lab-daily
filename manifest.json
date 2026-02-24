@@ -1,0 +1,25 @@
+{
+  "name": "PI Lab Daily - \u5b9e\u9a8c\u5ba4\u65e5\u62a5\u7ba1\u7406",
+  "short_name": "PI Lab Daily",
+  "description": "\u4e13\u4e3a\u533b\u5b66\u5b9e\u9a8c\u5ba4PI\u8bbe\u8ba1\u7684\u65e5\u62a5\u7ba1\u7406\u5de5\u5177",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
