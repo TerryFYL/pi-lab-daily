@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { DEMO_MODE, DEMO_REPORTS, DEMO_STATUS, getDemoWeekStatus } from "../lib/demo";
+import { DEMO_MODE, DEMO_REPORTS, DEMO_STATUS, getDemoWeekStatus, getDemoWeekReports } from "../lib/demo";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ interface DayStatus {
   loading: boolean;
 }
 
-type TabId = "dashboard" | "filling-status";
+type TabId = "dashboard" | "filling-status" | "weekly-summary";
 type FilterId = "all" | "not-submitted" | "needs-attention";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -729,6 +729,385 @@ function FillingStatusTab({
   );
 }
 
+// ─── CSV Export ──────────────────────────────────────────────────────────────
+
+function downloadCSV(filename: string, rows: string[][]) {
+  const csvContent = rows
+    .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const bom = "\uFEFF"; // UTF-8 BOM for Excel compatibility
+  const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Weekly Summary Tab ──────────────────────────────────────────────────────
+
+function WeeklySummaryTab({ todayStr }: { todayStr: string }) {
+  const weekDates = getWeekDates(todayStr);
+  const [weekReports, setWeekReports] = useState<Record<string, Report[]>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchWeekReports = async () => {
+      setLoading(true);
+      if (DEMO_MODE) {
+        await new Promise((r) => setTimeout(r, 400));
+        const demoData = getDemoWeekReports(weekDates);
+        // Cast MockReport[] to Report[] (compatible shapes)
+        const typed: Record<string, Report[]> = {};
+        for (const [date, reports] of Object.entries(demoData)) {
+          typed[date] = reports as unknown as Report[];
+        }
+        setWeekReports(typed);
+        setLoading(false);
+        return;
+      }
+
+      const results: Record<string, Report[]> = {};
+      await Promise.all(
+        weekDates.map(async ({ date }) => {
+          try {
+            const res = await fetch(`/api/reports?date=${date}`);
+            const data = await res.json();
+            results[date] = data.reports || [];
+          } catch {
+            results[date] = [];
+          }
+        })
+      );
+      setWeekReports(results);
+      setLoading(false);
+    };
+
+    fetchWeekReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayStr]);
+
+  // Aggregate all reports for the week
+  const allReports = useMemo(
+    () => Object.values(weekReports).flat(),
+    [weekReports]
+  );
+
+  // Per-student summary
+  const studentSummaries = useMemo(() => {
+    const map = new Map<
+      string,
+      { reports: Report[]; tags: Set<string>; problemDays: number; totalDays: number }
+    >();
+
+    for (const report of allReports) {
+      if (!map.has(report.student_name)) {
+        map.set(report.student_name, {
+          reports: [],
+          tags: new Set(),
+          problemDays: 0,
+          totalDays: 0,
+        });
+      }
+      const entry = map.get(report.student_name)!;
+      entry.reports.push(report);
+      entry.totalDays++;
+      if (report.problems && report.problems.trim()) entry.problemDays++;
+      // Extract tags
+      const tagRegex = /\[([^\]]+)\]/g;
+      let match;
+      while ((match = tagRegex.exec(report.work_done)) !== null) {
+        entry.tags.add(match[1]);
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.totalDays - a.totalDays);
+  }, [allReports]);
+
+  // Activity tag frequency
+  const tagFrequency = useMemo(() => {
+    const freq = new Map<string, number>();
+    for (const report of allReports) {
+      const tagRegex = /\[([^\]]+)\]/g;
+      let match;
+      while ((match = tagRegex.exec(report.work_done)) !== null) {
+        freq.set(match[1], (freq.get(match[1]) || 0) + 1);
+      }
+    }
+    return Array.from(freq.entries())
+      .sort((a, b) => b[1] - a[1]);
+  }, [allReports]);
+
+  // Daily completion stats
+  const dailyStats = useMemo(() => {
+    return weekDates.map(({ date, label }) => {
+      const status = date === todayStr
+        ? null // will use live data
+        : getDemoWeekStatus(date);
+      const reports = weekReports[date] || [];
+      return {
+        date,
+        label,
+        submitted: DEMO_MODE && status ? status.submitted_count : reports.length,
+        total: DEMO_MODE && status ? status.total : 6,
+      };
+    });
+  }, [weekDates, weekReports, todayStr]);
+
+  const weekTotal = dailyStats.reduce((sum, d) => sum + d.submitted, 0);
+  const weekMax = dailyStats.reduce((sum, d) => sum + d.total, 0);
+  const weekRate = weekMax > 0 ? Math.round((weekTotal / weekMax) * 100) : 0;
+
+  // Problems this week
+  const weekProblems = useMemo(
+    () => allReports.filter((r) => r.problems && r.problems.trim()),
+    [allReports]
+  );
+
+  // Export handler
+  const handleExport = () => {
+    const header = ["日期", "姓名", "今日工作", "遇到问题", "明日计划", "提交时间"];
+    const rows: string[][] = [header];
+
+    for (const { date } of weekDates) {
+      const reports = weekReports[date] || [];
+      for (const r of reports) {
+        rows.push([
+          date,
+          r.student_name,
+          r.work_done,
+          r.problems || "",
+          r.plan_tomorrow || "",
+          r.created_at,
+        ]);
+      }
+    }
+
+    const mondayStr = weekDates[0]?.date || todayStr;
+    downloadCSV(`实验室周报_${mondayStr}.csv`, rows);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <p className="text-gray-400 text-sm">加载周报数据...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Week overview */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            本周总览
+          </p>
+          <button
+            onClick={handleExport}
+            className="text-xs text-blue-600 font-medium bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+            aria-label="导出本周数据为CSV"
+          >
+            导出 CSV
+          </button>
+        </div>
+
+        {/* Week completion rate */}
+        <div className="flex items-baseline gap-2 mb-3">
+          <span className="text-2xl font-bold text-blue-600">{weekRate}%</span>
+          <span className="text-sm text-gray-400">周提交率</span>
+          <span className="text-xs text-gray-300 ml-auto">
+            {weekTotal}/{weekMax} 人次
+          </span>
+        </div>
+
+        {/* Daily bars */}
+        <div className="flex gap-1.5 items-end h-16">
+          {dailyStats.map((day) => {
+            const pct = day.total > 0 ? (day.submitted / day.total) * 100 : 0;
+            const isToday = day.date === todayStr;
+            const isFull = day.submitted === day.total && day.total > 0;
+            return (
+              <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full bg-gray-100 rounded-sm relative" style={{ height: "48px" }}>
+                  <div
+                    className={`absolute bottom-0 w-full rounded-sm transition-all duration-500 ${
+                      isFull ? "bg-green-500" : isToday ? "bg-blue-600" : "bg-blue-400"
+                    }`}
+                    style={{ height: `${pct}%` }}
+                  />
+                </div>
+                <span className={`text-xs ${isToday ? "text-blue-600 font-semibold" : "text-gray-400"}`}>
+                  {day.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Activity breakdown */}
+      {tagFrequency.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            本周实验类型
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {tagFrequency.map(([tag, count]) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-full"
+              >
+                {tag}
+                <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full font-semibold min-w-[18px] text-center">
+                  {count}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Problems this week */}
+      {weekProblems.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-3">
+            本周问题汇总（{weekProblems.length}条）
+          </p>
+          <div className="space-y-2">
+            {weekProblems.map((r) => (
+              <div
+                key={r.id}
+                className="border-l-2 border-orange-400 pl-3 py-1"
+              >
+                <p className="text-sm text-gray-800">{r.problems}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {r.student_name} · {weekDates.find((d) => weekReports[d.date]?.some((wr) => wr.id === r.id))?.label || ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Per-student weekly digest */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">
+          每人周报摘要
+        </p>
+        <div className="divide-y divide-gray-100">
+          {studentSummaries.map(({ name, tags, totalDays, problemDays }) => (
+            <StudentWeekCard
+              key={name}
+              name={name}
+              tags={Array.from(tags)}
+              totalDays={totalDays}
+              problemDays={problemDays}
+              weekDates={weekDates}
+              weekReports={weekReports}
+            />
+          ))}
+          {studentSummaries.length === 0 && (
+            <div className="py-8 text-center">
+              <p className="text-gray-400 text-sm">本周暂无日报数据</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StudentWeekCard({
+  name,
+  tags,
+  totalDays,
+  problemDays,
+  weekDates,
+  weekReports,
+}: {
+  name: string;
+  tags: string[];
+  totalDays: number;
+  problemDays: number;
+  weekDates: { date: string; label: string }[];
+  weekReports: Record<string, Report[]>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Collect this student's reports by day
+  const dailyReports = weekDates
+    .map(({ date, label }) => {
+      const report = (weekReports[date] || []).find((r) => r.student_name === name);
+      return { date, label, report };
+    })
+    .filter((d) => d.report);
+
+  return (
+    <div className="px-4 py-3">
+      <div
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-800">{name}</span>
+          <span className="text-xs text-gray-400">{totalDays}天提交</span>
+          {problemDays > 0 && (
+            <span className="text-xs text-orange-500">{problemDays}天有问题</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5">
+            {weekDates.map(({ date }) => {
+              const hasReport = (weekReports[date] || []).some((r) => r.student_name === name);
+              return (
+                <span
+                  key={date}
+                  className={`w-2 h-2 rounded-full ${hasReport ? "bg-green-500" : "bg-gray-200"}`}
+                />
+              );
+            })}
+          </div>
+          <span className="text-xs text-gray-400">{expanded ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {/* Tags */}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {tags.map((tag) => (
+            <span key={tag} className="bg-gray-100 text-gray-500 text-xs px-1.5 py-0.5 rounded">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded: daily breakdown */}
+      {expanded && (
+        <div className="mt-3 space-y-2 pl-2 border-l-2 border-gray-100">
+          {dailyReports.map(({ label, report }) =>
+            report ? (
+              <div key={report.id} className="text-sm">
+                <span className="text-xs font-medium text-gray-400 mr-2">{label}</span>
+                <span className="text-gray-700">{report.work_done.replace(/\[([^\]]+)\]/g, "").trim() || report.work_done}</span>
+                {report.problems && (
+                  <p className="text-xs text-orange-500 mt-0.5 ml-8">
+                    问题：{report.problems}
+                  </p>
+                )}
+              </div>
+            ) : null
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 /*
@@ -778,6 +1157,7 @@ function PIDashboard() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "dashboard", label: "今日看板" },
     { id: "filling-status", label: "填写状态" },
+    { id: "weekly-summary", label: "周报总结" },
   ];
 
   return (
@@ -830,6 +1210,9 @@ function PIDashboard() {
               todayReports={reports}
               todayStatus={status}
             />
+          )}
+          {activeTab === "weekly-summary" && (
+            <WeeklySummaryTab todayStr={todayStr} />
           )}
         </main>
 
