@@ -1,0 +1,15 @@
+{
+  "name": "pi-lab-daily",
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd", "sharp"]
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @pi-lab/web dev",
+    "dev:api": "pnpm --filter @pi-lab/api dev",
+    "dev": "pnpm run dev:api & pnpm run dev:web",
+    "build:web": "pnpm --filter @pi-lab/web build",
+    "deploy:api": "pnpm --filter @pi-lab/api deploy",
+    "deploy": "bash scripts/deploy.sh"
+  }
+}

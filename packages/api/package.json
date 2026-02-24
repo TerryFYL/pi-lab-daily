@@ -1,0 +1,19 @@
+{
+  "name": "@pi-lab/api",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute pi-lab-daily-db --local --file=./src/db/schema.sql",
+    "db:seed": "wrangler d1 execute pi-lab-daily-db --local --file=./src/db/seed.sql",
+    "db:reset": "wrangler d1 execute pi-lab-daily-db --local --command 'DELETE FROM daily_reports;' && wrangler d1 execute pi-lab-daily-db --local --file=./src/db/schema.sql && wrangler d1 execute pi-lab-daily-db --local --file=./src/db/seed.sql"
+  },
+  "dependencies": {
+    "hono": "^4.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.60.0"
+  }
+}
