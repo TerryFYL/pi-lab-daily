@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  base: process.env.VITE_DEMO === "true" ? "/pi-lab-daily/" : "/",
   plugins: [react()],
   server: {
     proxy: {
