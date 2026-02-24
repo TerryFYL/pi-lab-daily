@@ -12,6 +12,7 @@ export default function LandingPage() {
   const [form, setForm] = useState<FormData>({ name: "", lab_size: "", contact: "" });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [apiSent, setApiSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,10 +20,25 @@ export default function LandingPage() {
 
     setSubmitting(true);
 
-    // Save submission to localStorage
+    // Always save to localStorage as backup
     const existing = JSON.parse(localStorage.getItem("interest_submissions") || "[]");
     existing.push({ ...form, timestamp: new Date().toISOString() });
     localStorage.setItem("interest_submissions", JSON.stringify(existing));
+
+    // Try to POST to API if configured
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (apiUrl) {
+      try {
+        await fetch(`${apiUrl}/api/leads`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, timestamp: new Date().toISOString() }),
+        });
+        setApiSent(true);
+      } catch {
+        // API unavailable — localStorage backup exists
+      }
+    }
 
     setSubmitted(true);
     setSubmitting(false);
@@ -139,6 +155,36 @@ export default function LandingPage() {
         </div>
       </div>
 
+      {/* About / Credibility */}
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <div className="bg-blue-50 rounded-2xl p-6 sm:p-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-3">为什么做这个？</h2>
+          <p className="text-sm text-gray-600 leading-relaxed mb-4">
+            我是一名北京大学医学部博士后，在医学实验室待了十年。我亲眼见过太多
+            PI 的困境——开完会才知道学生实验出了问题，出差几天就完全失去对实验室的掌控。
+          </p>
+          <p className="text-sm text-gray-600 leading-relaxed mb-4">
+            现有的工具要么太重（ELN、LIMS），要么太散（微信群、Excel），
+            没有一个是专为 PI "快速了解学生动态" 设计的。
+          </p>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            所以我做了这个极简工具——学生1分钟填，PI 2分钟看。
+            不替代你的 ELN，只解决"<span className="font-medium text-gray-800">信息黑洞</span>"问题。
+          </p>
+        </div>
+      </div>
+
+      {/* Data privacy note */}
+      <div className="max-w-2xl mx-auto px-6 pb-8">
+        <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <span>数据安全存储，仅 PI 和本实验室成员可见</span>
+        </div>
+      </div>
+
       {/* Interest form */}
       <div className="max-w-2xl mx-auto px-6 py-16" id="try">
         {submitted ? (
@@ -148,10 +194,22 @@ export default function LandingPage() {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">收到了！</h3>
-            <p className="text-sm text-gray-500 mb-6">
-              我们会在 24 小时内联系您，帮您配置实验室环境。
-            </p>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">感谢您的兴趣！</h3>
+            {apiSent ? (
+              <p className="text-sm text-gray-500 mb-6">
+                我们已收到您的信息，会尽快联系您配置实验室环境。
+              </p>
+            ) : (
+              <div className="mb-6">
+                <p className="text-sm text-gray-500 mb-4">
+                  为了尽快帮您开通，请通过以下方式联系我：
+                </p>
+                <div className="inline-flex flex-col items-center gap-2 bg-gray-50 rounded-xl px-6 py-4">
+                  <span className="text-sm font-medium text-gray-700">微信号：terryfyl</span>
+                  <span className="text-xs text-gray-400">添加时请备注"实验室日报"</span>
+                </div>
+              </div>
+            )}
             <button
               onClick={() => navigate("/dashboard")}
               className="text-sm text-blue-600 font-medium hover:underline"
