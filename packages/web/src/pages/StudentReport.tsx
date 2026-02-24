@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { DEMO_MODE, DEMO_STUDENT_NAMES } from "../lib/demo";
 
 // ---------------------------------------------------------------------------
@@ -450,8 +451,17 @@ export default function StudentReport() {
 
       <div className="min-h-screen bg-gray-50">
         {DEMO_MODE && (
-          <div className="bg-blue-600 text-white text-center text-xs py-1.5 px-4">
-            演示模式 — 选择姓名，体验学生日报提交流程
+          <div className="bg-blue-600 text-white text-xs py-2 px-4 flex items-center justify-between">
+            <Link to="/" className="text-white/80 hover:text-white font-medium transition-colors">
+              ← 首页
+            </Link>
+            <span className="text-white/70">演示模式</span>
+            <Link
+              to="/"
+              className="bg-white text-blue-600 px-3 py-1 rounded-full font-semibold hover:bg-blue-50 transition-colors"
+            >
+              免费试用
+            </Link>
           </div>
         )}
         <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
