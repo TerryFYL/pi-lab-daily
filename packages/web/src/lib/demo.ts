@@ -3,6 +3,8 @@
  * Activates automatically on github.io or when VITE_DEMO=true.
  */
 
+import { getStudents } from "./students";
+
 const hostname = typeof window !== "undefined" ? window.location.hostname : "";
 
 export const DEMO_MODE =
@@ -27,7 +29,8 @@ function hoursAgo(h: number): string {
 // Mock data — realistic medical lab daily reports
 // ---------------------------------------------------------------------------
 
-const STUDENTS = ["陈思远", "刘雨桐", "张明阳", "王子涵", "李晓萱", "赵天宇"];
+// Default students for demo data generation (hardcoded content references these names)
+const DEMO_DEFAULT_STUDENTS = ["陈思远", "刘雨桐", "张明阳", "王子涵", "李晓萱", "赵天宇"];
 
 export interface MockReport {
   id: number;
@@ -81,18 +84,24 @@ export const DEMO_REPORTS: MockReport[] = [
   },
 ];
 
-const SUBMITTED_NAMES = DEMO_REPORTS.map((r) => r.student_name);
-const NOT_SUBMITTED = STUDENTS.filter((n) => !SUBMITTED_NAMES.includes(n));
+/** Compute demo status dynamically from current student roster. */
+export function getDemoStatus(): MockStatus {
+  const students = getStudents();
+  const submittedNames = DEMO_REPORTS.map((r) => r.student_name).filter((n) => students.includes(n));
+  const notSubmitted = students.filter((n) => !submittedNames.includes(n));
+  return {
+    date: todayStr(),
+    total: students.length,
+    submitted_count: submittedNames.length,
+    submitted: submittedNames,
+    not_submitted: notSubmitted,
+  };
+}
 
-export const DEMO_STATUS: MockStatus = {
-  date: todayStr(),
-  total: STUDENTS.length,
-  submitted_count: SUBMITTED_NAMES.length,
-  submitted: SUBMITTED_NAMES,
-  not_submitted: NOT_SUBMITTED,
-};
-
-export const DEMO_STUDENT_NAMES = STUDENTS;
+/** @deprecated Use getStudents() from ./students instead */
+export function getDemoStudentNames(): string[] {
+  return getStudents();
+}
 
 // Generate a week of statuses for the filling-status tab
 // Use seeded random for consistent results per date
@@ -106,25 +115,30 @@ function dateToSeed(date: string): number {
 }
 
 export function getDemoWeekStatus(date: string): MockStatus {
+  const students = getStudents();
   const d = new Date(date + "T00:00:00+08:00");
   const dow = d.getUTCDay(); // 0=Sun
   const isWeekend = dow === 0 || dow === 6;
 
   if (isWeekend) {
-    return { date, total: 6, submitted_count: 0, submitted: [], not_submitted: STUDENTS };
+    return { date, total: students.length, submitted_count: 0, submitted: [], not_submitted: [...students] };
   }
 
+  // Only students with demo data can appear as "submitted"
+  const withData = students.filter((n) => n in WEEKLY_WORK_POOL);
+  const withoutData = students.filter((n) => !(n in WEEKLY_WORK_POOL));
+
   const seed = dateToSeed(date);
-  const shuffled = [...STUDENTS].sort((a, b) =>
+  const shuffled = [...withData].sort((a, b) =>
     seededRandom(seed + a.charCodeAt(0)) - seededRandom(seed + b.charCodeAt(0))
   );
-  const count = Math.min(4 + Math.floor(seededRandom(seed + 7) * 3), 6);
+  const count = Math.min(4 + Math.floor(seededRandom(seed + 7) * 3), withData.length);
   const submitted = shuffled.slice(0, count);
-  const notSubmitted = shuffled.slice(count);
+  const notSubmitted = [...shuffled.slice(count), ...withoutData];
 
   return {
     date,
-    total: 6,
+    total: students.length,
     submitted_count: count,
     submitted,
     not_submitted: notSubmitted,

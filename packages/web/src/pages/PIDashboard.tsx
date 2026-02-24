@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { DEMO_MODE, DEMO_REPORTS, DEMO_STATUS, getDemoWeekStatus, getDemoWeekReports } from "../lib/demo";
+import { DEMO_MODE, DEMO_REPORTS, getDemoStatus, getDemoWeekStatus, getDemoWeekReports } from "../lib/demo";
+import { getStudents, saveStudents, isCustomRoster, resetToDefault } from "../lib/students";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ interface DayStatus {
   loading: boolean;
 }
 
-type TabId = "dashboard" | "filling-status" | "weekly-summary";
+type TabId = "dashboard" | "filling-status" | "weekly-summary" | "student-mgmt";
 type FilterId = "all" | "not-submitted" | "needs-attention";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1108,6 +1109,169 @@ function StudentWeekCard({
   );
 }
 
+// ─── Student Management Tab ──────────────────────────────────────────────────
+
+function StudentManagementTab({ onRosterChange }: { onRosterChange: () => void }) {
+  const [students, setStudentsState] = useState<string[]>(() => getStudents());
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const custom = isCustomRoster();
+
+  const handleAdd = () => {
+    const name = newName.trim();
+    if (!name) return;
+    if (students.includes(name)) {
+      setError("该姓名已存在");
+      return;
+    }
+    const updated = [...students, name];
+    saveStudents(updated);
+    setStudentsState(updated);
+    setNewName("");
+    setError(null);
+    onRosterChange();
+  };
+
+  const handleRemove = (name: string) => {
+    if (confirmDelete !== name) {
+      setConfirmDelete(name);
+      return;
+    }
+    const updated = students.filter((n) => n !== name);
+    saveStudents(updated);
+    setStudentsState(updated);
+    setConfirmDelete(null);
+    onRosterChange();
+  };
+
+  const handleReset = () => {
+    resetToDefault();
+    setStudentsState(getStudents());
+    setConfirmDelete(null);
+    onRosterChange();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="bg-white rounded-xl p-4 border border-gray-100">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-semibold text-gray-800">学生名单</h2>
+          <span className="text-sm text-gray-400">共 {students.length} 人</span>
+        </div>
+        <p className="text-xs text-gray-400">
+          {custom ? "已自定义名单" : "默认演示名单"}
+          {custom ? "，修改后所有页面同步更新" : "，添加或删除学生后自动切换为自定义名单"}
+        </p>
+      </div>
+
+      {/* Add student */}
+      <div className="bg-white rounded-xl p-4 border border-gray-100">
+        <label className="text-sm font-medium text-gray-600 block mb-2">添加学生</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => { setNewName(e.target.value); setError(null); }}
+            onKeyDown={handleKeyDown}
+            placeholder="输入学生姓名"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+            maxLength={20}
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!newName.trim()}
+            className={[
+              "px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+              newName.trim()
+                ? "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed",
+            ].join(" ")}
+          >
+            添加
+          </button>
+        </div>
+        {error && (
+          <p className="text-xs text-red-500 mt-1.5">{error}</p>
+        )}
+      </div>
+
+      {/* Student list */}
+      <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+        {students.map((name, idx) => (
+          <div
+            key={name}
+            className="flex items-center justify-between px-4 py-3"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-300 w-5 text-right">{idx + 1}</span>
+              <span className="text-sm text-gray-800">{name}</span>
+            </div>
+            {confirmDelete === name ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">确认删除？</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(name)}
+                  className="text-xs text-red-500 font-medium hover:text-red-600"
+                >
+                  删除
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(null)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleRemove(name)}
+                className="w-7 h-7 flex items-center justify-center rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                aria-label={`删除${name}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
+          </div>
+        ))}
+        {students.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-gray-400">
+            暂无学生，请添加
+          </div>
+        )}
+      </div>
+
+      {/* Reset to default */}
+      {custom && (
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            恢复默认演示名单
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 /*
@@ -1131,7 +1295,7 @@ function PIDashboard() {
       if (DEMO_MODE) {
         await new Promise((r) => setTimeout(r, 300));
         setReports(DEMO_REPORTS as Report[]);
-        setStatus(DEMO_STATUS as StatusData);
+        setStatus(getDemoStatus() as StatusData);
         setLoading(false);
         return;
       }
@@ -1158,6 +1322,7 @@ function PIDashboard() {
     { id: "dashboard", label: "今日看板" },
     { id: "filling-status", label: "填写状态" },
     { id: "weekly-summary", label: "周报总结" },
+    { id: "student-mgmt", label: "学生管理" },
   ];
 
   return (
@@ -1213,6 +1378,9 @@ function PIDashboard() {
           )}
           {activeTab === "weekly-summary" && (
             <WeeklySummaryTab todayStr={todayStr} />
+          )}
+          {activeTab === "student-mgmt" && (
+            <StudentManagementTab onRosterChange={fetchData} />
           )}
         </main>
 

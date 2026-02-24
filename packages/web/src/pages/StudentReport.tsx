@@ -14,15 +14,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { DEMO_MODE, DEMO_STUDENT_NAMES } from "../lib/demo";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const STUDENTS = DEMO_MODE
-  ? DEMO_STUDENT_NAMES
-  : ["张三", "李四", "王五", "赵六", "孙七", "周八"];
+import { DEMO_MODE } from "../lib/demo";
+import { getStudents } from "../lib/students";
 
 const ACTIVITY_TAGS = [
   "细胞培养",
@@ -246,6 +239,7 @@ function SuccessOverlay({ submittedAt, onViewSubmission, onClose }: SuccessOverl
 
 export default function StudentReport() {
   const dateStr = getTodayStr();
+  const students = getStudents();
 
   // --- Persistent student selection ---
   const [studentName, setStudentName] = useState<string>(() => {
@@ -483,7 +477,7 @@ export default function StudentReport() {
                   aria-label="选择你的名字"
                 >
                   <option value="">选择姓名</option>
-                  {STUDENTS.map((name) => (
+                  {students.map((name) => (
                     <option key={name} value={name}>
                       {name}
                     </option>
