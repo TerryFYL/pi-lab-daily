@@ -205,7 +205,7 @@ export default function LandingPage() {
                   为了尽快帮您开通，请通过以下方式联系我：
                 </p>
                 <div className="inline-flex flex-col items-center gap-2 bg-gray-50 rounded-xl px-6 py-4">
-                  <span className="text-sm font-medium text-gray-700">微信号：terryfyl</span>
+                  <span className="text-sm font-medium text-gray-700">微信号：tzx-lwl</span>
                   <span className="text-xs text-gray-400">添加时请备注"实验室日报"</span>
                 </div>
               </div>
